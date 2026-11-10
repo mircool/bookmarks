@@ -62,7 +62,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/"
+    "test": "node --test"
   }
 }
 ```
@@ -453,7 +453,7 @@ Expected: PASS，9 个测试全部通过。
 
 - [ ] **Step 5: 运行全部测试**
 
-Run: `node --test tests/`
+Run: `node --test`
 Expected: 17 个测试全部通过。
 
 - [ ] **Step 6: 提交（仅在用户授权版本控制时）**
@@ -787,7 +787,7 @@ Expected: PASS，4 个测试全部通过。
 
 - [ ] **Step 5: 运行全部测试**
 
-Run: `node --test tests/`
+Run: `node --test`
 Expected: 27 个测试全部通过。
 
 - [ ] **Step 6: 提交（仅在用户授权版本控制时）**
@@ -2202,7 +2202,7 @@ Expected: 无输出，退出码 0。
 
 - [ ] **Step 3: 运行全部单元测试**
 
-Run: `node --test tests/`
+Run: `node --test`
 Expected: 27 个测试全部通过。
 
 - [ ] **Step 4: 静态检查 HTML 契约与脚本引用**
@@ -2264,7 +2264,7 @@ Chrome 扩展（Manifest V3）：批量检测书签链接可达性，标记失�
 ## 开发与测试
 
 ```bash
-npm test          # 等价于 node --test tests/
+npm test          # 运行全部单元测试（node --test）
 ```
 
 项目零第三方依赖，可直接以已解压扩展加载。
