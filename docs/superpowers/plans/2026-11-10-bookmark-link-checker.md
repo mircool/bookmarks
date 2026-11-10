@@ -944,6 +944,15 @@ async function startScan(items) {
     console.warn('初始扫描快照写入失败:', err);
   });
 
+  broadcast({
+    type: 'SNAPSHOT',
+    scanId,
+    results: [],
+    done: 0,
+    total: items.length,
+    status: 'running',
+  });
+
   runScan({
     items,
     signal: controller.signal,
@@ -1660,6 +1669,7 @@ const state = {
 
 let renderTimer = null;
 let modalResolve = null;
+let modalLastFocus = null;
 let scanPort = null;
 
 init();
@@ -2264,8 +2274,6 @@ async function restoreBackup(summary) {
     renderBackups();
   }
 }
-
-let modalLastFocus = null;
 
 function setBackgroundInert(inert) {
   document.querySelector('.topbar').inert = inert;
