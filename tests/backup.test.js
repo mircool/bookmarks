@@ -4,7 +4,7 @@ import { MAX_BACKUPS, buildBackup, trimBackups, buildRestorePlan } from '../lib/
 
 test('buildBackup 抽取字段并计数', () => {
   const items = [
-    { bookmarkId: '1', title: '旧站', url: 'https://old.example', rootKind: 'toolbar', folderPath: ['技术', '前端'], verdict: 'broken' },
+    { bookmarkId: '1', title: '旧站', url: 'https://old.example', rootKind: 'toolbar', path: ['技术', '前端'], verdict: 'broken' },
   ];
   const backup = buildBackup(items, { id: 'bk_1', now: 1000 });
   assert.equal(backup.id, 'bk_1');
@@ -15,6 +15,8 @@ test('buildBackup 抽取字段并计数', () => {
   assert.deepEqual(backup.items, [
     { title: '旧站', url: 'https://old.example', rootKind: 'toolbar', path: ['技术', '前端'] },
   ]);
+  // 备份须为独立副本，避免共享输入路径数组。
+  assert.notEqual(backup.items[0].path, items[0].path);
 });
 
 test('trimBackups 保留最新 10 份', () => {
