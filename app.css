@@ -6,7 +6,7 @@
   --line: #e2e2de;
   --line-strong: #cfcfc9;
   --text: #1b1b19;
-  --muted: #6e6e67;
+  --muted: #67675f;
   --strong: #171715;
   --strong-text: #fbfbf9;
   --danger: #b3261e;
@@ -14,9 +14,9 @@
   --danger-soft: #fbeeec;
   --warn: #9a5b08;
   --ok: #1f6f43;
-  --skip: #74746c;
+  --skip: #6a6a62;
   --focus: #171715;
-  /* 半径分级：面板 10px，控件 7px，行内小块 5px；三级固定，不新增中间值。 */
+  /* 半径只有两级令牌：面板 10px、控件 7px；进度条 2px 与弹窗 12px 按原值保留为例外。 */
   --radius-panel: 10px;
   --radius-control: 7px;
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -334,6 +334,7 @@ button, input { font: inherit; color: inherit; }
 .btn.primary { background: var(--strong); border-color: var(--strong); color: var(--strong-text); }
 .btn.primary:hover:not(:disabled) { opacity: 0.9; }
 .btn.danger { background: var(--danger-solid); border-color: var(--danger-solid); color: #fff; }
+.btn.danger:hover:not(:disabled) { background: #8f231a; border-color: #8f231a; }
 .btn.danger-outline { background: transparent; border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); color: var(--danger); }
 .btn.danger-outline:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger); }
 .btn.danger-ghost { border-color: transparent; background: transparent; color: var(--danger); }
