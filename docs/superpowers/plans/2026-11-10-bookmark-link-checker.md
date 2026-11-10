@@ -1554,6 +1554,7 @@ button, input { font: inherit; color: inherit; }
   transition: color 0.12s var(--ease);
 }
 .link-btn:hover { color: var(--text); }
+.link-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .modal-root { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; }
 .modal-backdrop { position: absolute; inset: 0; background: rgba(12, 12, 10, 0.5); backdrop-filter: blur(2px); }
@@ -1643,10 +1644,12 @@ const state = {
   current: '',
   lastScan: null,
   backups: [],
+  busy: false,
 };
 
 let renderTimer = null;
 let modalResolve = null;
+let scanPort = null;
 
 init();
 
@@ -1688,30 +1691,55 @@ function bindEvents() {
 
 function connectScanPort() {
   const port = chrome.runtime.connect({ name: 'scan' });
-  port.onMessage.addListener((message) => {
-    if (message.type === 'SNAPSHOT') {
-      state.scanId = message.scanId ?? state.scanId;
-      state.scanning = message.status === 'running';
-      state.results = message.results ?? [];
-      state.total = message.total ?? state.results.length;
-      state.done = message.done ?? state.results.length;
-      renderAll();
-    } else if (message.type === 'PROGRESS') {
-      state.done = message.done;
-      state.total = message.total;
-      state.current = message.current;
-      updateProgress();
-    } else if (message.type === 'ITEM_RESULT') {
-      state.results.push(message.result);
-      scheduleResultsRender();
-    } else if (message.type === 'SCAN_DONE') {
-      state.scanning = false;
-      state.current = '';
-      renderAll();
-      void loadSnapshot();
-      void loadBackups();
-    }
+  scanPort = port;
+  port.onMessage.addListener(handleScanMessage);
+  port.onDisconnect.addListener(() => {
+    if (scanPort !== port) return;
+    scanPort = null;
+    void handleScanPortDisconnect();
   });
+}
+
+function handleScanMessage(message) {
+  if (message.type === 'SNAPSHOT') {
+    state.scanId = message.scanId ?? state.scanId;
+    state.scanning = message.status === 'running';
+    state.results = message.results ?? [];
+    state.total = message.total ?? state.results.length;
+    state.done = message.done ?? state.results.length;
+    renderAll();
+  } else if (message.type === 'PROGRESS') {
+    state.done = message.done;
+    state.total = message.total;
+    state.current = message.current;
+    updateProgress();
+  } else if (message.type === 'ITEM_RESULT') {
+    state.results.push(message.result);
+    scheduleResultsRender();
+  } else if (message.type === 'SCAN_DONE') {
+    state.scanning = false;
+    state.current = '';
+    renderAll();
+    void loadSnapshot();
+    void loadBackups();
+  }
+}
+
+async function handleScanPortDisconnect() {
+  // worker 空闲被回收会断开端口；若扫描仍在进行，重连后由后台补发快照
+  try {
+    const scanState = await chrome.runtime.sendMessage({ type: 'GET_SCAN_STATE' });
+    if (scanState?.scanning) {
+      connectScanPort();
+      return;
+    }
+  } catch {
+    // 后台不可达时按未在扫描处理
+  }
+  state.scanning = false;
+  state.current = '';
+  renderAll();
+  await loadSnapshot();
 }
 
 async function refreshTree() {
@@ -1847,7 +1875,7 @@ function updateSelectedCount() {
 }
 
 async function startScan(mode) {
-  if (state.scanning) return;
+  if (state.scanning || state.busy) return;
   const ids = mode === 'all' ? ['0'] : [...state.selected];
   const items = collectBookmarks(state.tree, ids);
   if (!items.length) {
@@ -1855,9 +1883,20 @@ async function startScan(mode) {
     return;
   }
 
+  if (scanPort) {
+    try {
+      scanPort.disconnect();
+    } catch {
+      // 端口已断开时忽略
+    }
+    scanPort = null;
+  }
+  connectScanPort();
+
   state.results = [];
   state.filter = 'all';
   state.scanning = true;
+  state.scanId = null;
   state.done = 0;
   state.total = items.length;
   state.current = '';
@@ -1869,14 +1908,15 @@ async function startScan(mode) {
     state.scanId = response.scanId;
   } catch (err) {
     state.scanning = false;
+    state.scanId = null;
     renderAll();
     showInfo('扫描启动失败', escapeHtml(String(err?.message ?? err)));
   }
 }
 
 function updateScanButtons() {
-  el('scan-all').disabled = state.scanning;
-  el('scan-selected').disabled = state.scanning;
+  el('scan-all').disabled = state.scanning || state.busy;
+  el('scan-selected').disabled = state.scanning || state.busy;
   el('cancel-scan').classList.toggle('hidden', !state.scanning);
 }
 
@@ -1923,7 +1963,7 @@ function renderResults() {
   const brokenCount = countOf('broken');
   const cleanupBtn = el('cleanup');
   cleanupBtn.textContent = `一键清理失效（${brokenCount}）`;
-  cleanupBtn.disabled = brokenCount === 0 || state.scanning;
+  cleanupBtn.disabled = brokenCount === 0 || state.scanning || state.busy;
 
   const empty = el('empty');
   empty.classList.toggle('hidden', state.results.length > 0);
@@ -2063,56 +2103,67 @@ async function confirmDelete(result) {
 }
 
 async function cleanupBroken() {
+  if (state.busy || state.scanning) return;
   const broken = state.results.filter((result) => result.verdict === 'broken');
   if (!broken.length) return;
 
-  const ok = await openModal({
-    title: '一键清理失效书签',
-    body: `将删除 <strong>${broken.length}</strong> 个确认失效的书签。<br>删除前会自动生成备份并下载备份文件，备份同时保存在「备份记录」中。<br><br>此操作不可撤销。`,
-    confirmText: '备份并清理',
-    showCancel: true,
-  });
-  if (!ok) return;
-
-  const backupItems = broken.map((result) => ({
-    title: result.title,
-    url: result.url,
-    rootKind: result.rootKind,
-    path: result.folderPath,
-  }));
-
-  let backup;
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'CREATE_BACKUP', items: backupItems });
-    if (response?.error) throw new Error(response.error);
-    backup = response.backup;
-  } catch (err) {
-    showInfo('备份失败，已中止清理', escapeHtml(String(err?.message ?? err)));
-    return;
-  }
-
-  downloadBackup(backup);
-
-  const response = await chrome.runtime.sendMessage({
-    type: 'DELETE_BOOKMARKS',
-    bookmarkIds: broken.map((result) => result.bookmarkId),
-  });
-  if (response?.error) {
-    showInfo('清理失败', escapeHtml(response.error));
-    return;
-  }
-
-  const removedSet = new Set(response.removed ?? []);
-  state.results = state.results.filter((result) => !removedSet.has(result.bookmarkId));
+  state.busy = true;
   renderAll();
-  await refreshTree();
-  await loadBackups();
+  renderBackups();
+  try {
+    const ok = await openModal({
+      title: '一键清理失效书签',
+      body: `将删除 <strong>${broken.length}</strong> 个确认失效的书签。<br>删除前会自动生成备份并下载备份文件，备份同时保存在「备份记录」中。<br><br>此操作不可撤销。`,
+      confirmText: '备份并清理',
+      showCancel: true,
+    });
+    if (!ok) return;
 
-  const failedCount = response.failed?.length ?? 0;
-  showInfo(
-    '清理完成',
-    `已删除 ${response.removed?.length ?? 0} 条失效书签${failedCount ? `，失败 ${failedCount} 条` : ''}。<br>备份文件已下载，可在「备份记录」中恢复。`,
-  );
+    const backupItems = broken.map((result) => ({
+      title: result.title,
+      url: result.url,
+      rootKind: result.rootKind,
+      path: result.folderPath,
+    }));
+
+    let backup;
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'CREATE_BACKUP', items: backupItems });
+      if (response?.error) throw new Error(response.error);
+      backup = response.backup;
+    } catch (err) {
+      showInfo('备份失败，已中止清理', escapeHtml(String(err?.message ?? err)));
+      return;
+    }
+
+    downloadBackup(backup);
+
+    const response = await chrome.runtime.sendMessage({
+      type: 'DELETE_BOOKMARKS',
+      bookmarkIds: broken.map((result) => result.bookmarkId),
+    });
+    if (response?.error) {
+      await loadBackups();
+      showInfo('清理失败', escapeHtml(response.error));
+      return;
+    }
+
+    const removedSet = new Set(response.removed ?? []);
+    state.results = state.results.filter((result) => !removedSet.has(result.bookmarkId));
+    renderAll();
+    await refreshTree();
+    await loadBackups();
+
+    const failedCount = response.failed?.length ?? 0;
+    showInfo(
+      '清理完成',
+      `已删除 ${response.removed?.length ?? 0} 条失效书签${failedCount ? `，失败 ${failedCount} 条` : ''}。<br>备份文件已下载，可在「备份记录」中恢复。`,
+    );
+  } finally {
+    state.busy = false;
+    renderAll();
+    renderBackups();
+  }
 }
 
 function downloadBackup(backup) {
@@ -2142,6 +2193,7 @@ function renderBackups() {
     const download = document.createElement('button');
     download.className = 'link-btn';
     download.textContent = '下载';
+    download.disabled = state.busy;
     download.addEventListener('click', async () => {
       const response = await chrome.runtime.sendMessage({ type: 'GET_BACKUP', id: backup.id });
       if (response?.backup) downloadBackup(response.backup);
@@ -2150,6 +2202,7 @@ function renderBackups() {
     const restore = document.createElement('button');
     restore.className = 'link-btn';
     restore.textContent = '恢复';
+    restore.disabled = state.busy;
     restore.addEventListener('click', () => restoreBackup(backup));
 
     row.append(info, download, restore);
@@ -2158,31 +2211,42 @@ function renderBackups() {
 }
 
 async function restoreBackup(summary) {
-  const ok = await openModal({
-    title: '从备份恢复',
-    body: `将把备份中的 <strong>${summary.count}</strong> 个书签恢复到原文件夹（同名文件夹不存在时自动创建）。`,
-    confirmText: '恢复',
-    showCancel: true,
-  });
-  if (!ok) return;
+  if (state.busy || state.scanning) return;
 
-  const full = await chrome.runtime.sendMessage({ type: 'GET_BACKUP', id: summary.id });
-  if (!full?.backup) {
-    showInfo('恢复失败', '备份不存在。');
-    return;
-  }
+  state.busy = true;
+  renderAll();
+  renderBackups();
+  try {
+    const ok = await openModal({
+      title: '从备份恢复',
+      body: `将把备份中的 <strong>${summary.count}</strong> 个书签恢复到原文件夹（同名文件夹不存在时自动创建）。`,
+      confirmText: '恢复',
+      showCancel: true,
+    });
+    if (!ok) return;
 
-  const response = await chrome.runtime.sendMessage({ type: 'RESTORE_BACKUP', backup: full.backup });
-  if (response?.error) {
-    showInfo('恢复失败', escapeHtml(response.error));
-    return;
+    const full = await chrome.runtime.sendMessage({ type: 'GET_BACKUP', id: summary.id });
+    if (!full?.backup) {
+      showInfo('恢复失败', '备份不存在。');
+      return;
+    }
+
+    const response = await chrome.runtime.sendMessage({ type: 'RESTORE_BACKUP', backup: full.backup });
+    if (response?.error) {
+      showInfo('恢复失败', escapeHtml(response.error));
+      return;
+    }
+    await refreshTree();
+    const failedCount = response.failed?.length ?? 0;
+    showInfo(
+      '恢复完成',
+      `已恢复 ${response.created ?? 0} 条书签${failedCount ? `，失败 ${failedCount} 条` : ''}。`,
+    );
+  } finally {
+    state.busy = false;
+    renderAll();
+    renderBackups();
   }
-  await refreshTree();
-  const failedCount = response.failed?.length ?? 0;
-  showInfo(
-    '恢复完成',
-    `已恢复 ${response.created ?? 0} 条书签${failedCount ? `，失败 ${failedCount} 条` : ''}。`,
-  );
 }
 
 function openModal({ title, body, confirmText = '确认', showCancel = true }) {
