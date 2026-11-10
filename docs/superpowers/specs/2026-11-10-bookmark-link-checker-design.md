@@ -287,7 +287,7 @@ UI → 后台（`chrome.runtime.sendMessage`，均返回 Promise）：
 
 ## 14. 测试计划
 
-### 14.1 单元测试（`node --test tests/`）
+### 14.1 单元测试（`node --test`）
 
 - `verdict.test.js`：`isCheckable` 各协议；`classify` 覆盖全部状态码分支（2xx、3xx、401、403、404、410、429、其他 4xx、5xx、超时、网络错误、无状态）。
 - `scanner.test.js`（注入 fetch stub）：
