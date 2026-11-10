@@ -27,6 +27,8 @@ const state = {
 
 let renderTimer = null;
 let modalResolve = null;
+// init() 可能在缺权限时先弹信息框，故提前声明，避免 TDZ 报错。
+let modalLastFocus = null;
 let scanPort = null;
 
 init();
@@ -642,8 +644,6 @@ async function restoreBackup(summary) {
     renderBackups();
   }
 }
-
-let modalLastFocus = null;
 
 function setBackgroundInert(inert) {
   // 弹窗期间让背景不可聚焦、不可点，键盘 Tab 只在弹窗内循环。

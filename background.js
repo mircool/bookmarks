@@ -112,6 +112,16 @@ async function startScan(items) {
     console.warn('初始扫描快照写入失败:', err);
   });
 
+  // 已连接的页面不会收到后续新开端口才有的快照，故主动广播开局状态，避免新旧结果混杂。
+  broadcast({
+    type: 'SNAPSHOT',
+    scanId,
+    results: [],
+    done: 0,
+    total: items.length,
+    status: 'running',
+  });
+
   runScan({
     items,
     signal: controller.signal,
