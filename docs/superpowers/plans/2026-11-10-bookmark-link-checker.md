@@ -1213,7 +1213,7 @@ git commit -m "feat: add MV3 manifest and background service worker"
   --line: #e2e2de;
   --line-strong: #cfcfc9;
   --text: #1b1b19;
-  --muted: #6e6e67;
+  --muted: #67675f;
   --strong: #171715;
   --strong-text: #fbfbf9;
   --danger: #b3261e;
@@ -1221,7 +1221,7 @@ git commit -m "feat: add MV3 manifest and background service worker"
   --danger-soft: #fbeeec;
   --warn: #9a5b08;
   --ok: #1f6f43;
-  --skip: #74746c;
+  --skip: #6a6a62;
   --focus: #171715;
   --radius-panel: 10px;
   --radius-control: 7px;
@@ -1537,6 +1537,7 @@ button, input { font: inherit; color: inherit; }
 .btn.primary { background: var(--strong); border-color: var(--strong); color: var(--strong-text); }
 .btn.primary:hover:not(:disabled) { opacity: 0.9; }
 .btn.danger { background: var(--danger-solid); border-color: var(--danger-solid); color: #fff; }
+.btn.danger:hover:not(:disabled) { background: #8f231a; border-color: #8f231a; }
 .btn.danger-outline { background: transparent; border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); color: var(--danger); }
 .btn.danger-outline:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger); }
 .btn.danger-ghost { border-color: transparent; background: transparent; color: var(--danger); }
