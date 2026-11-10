@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>书签失效检测器</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">书签失效检测器</div>
+    <div class="topbar-actions">
+      <button id="scan-all" class="btn primary">扫描全部</button>
+      <button id="cancel-scan" class="btn danger hidden">取消扫描</button>
+    </div>
+    <div id="progress" class="progress hidden">
+      <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+      <span id="progress-text" class="progress-text"></span>
+    </div>
+    <div id="stats" class="stats"></div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <span>书签</span>
+        <span class="sidebar-actions">
+          <button id="select-all" class="link-btn">全选</button>
+          <button id="select-none" class="link-btn">清空</button>
+        </span>
+      </div>
+      <div id="bookmark-tree" class="tree"></div>
+      <div class="sidebar-foot">
+        <span id="selected-count">已选 0 个链接</span>
+        <button id="scan-selected" class="btn primary">扫描所选</button>
+      </div>
+    </aside>
+
+    <section class="content">
+      <div id="last-scan" class="last-scan"></div>
+      <div class="bulkbar">
+        <nav id="filters" class="filters"></nav>
+        <button id="cleanup" class="btn danger-outline" disabled>一键清理失效（0）</button>
+      </div>
+      <div id="results" class="results"></div>
+      <div id="empty" class="empty">暂无结果，请选择范围后开始扫描。</div>
+      <section class="backups">
+        <button id="toggle-backups" class="link-btn">备份记录</button>
+        <div id="backup-list" class="backup-list hidden"></div>
+      </section>
+    </section>
+  </main>
+
+  <div id="modal-root" class="modal-root hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h3 id="modal-title"></h3>
+      <div id="modal-body"></div>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn">取消</button>
+        <button id="modal-confirm" class="btn danger">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
