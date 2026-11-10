@@ -7,15 +7,17 @@ const KEEPALIVE_MS = 25000;
 const SNAPSHOT_EVERY = 50;
 
 let activeScan = null;
-let scanPort = null;
+// 多个页面可能同时连入，故用集合而非单槽位广播。
+const scanPorts = new Set();
 
 function broadcast(message) {
-  // 页面关闭后端口失效，postMessage 会抛错；捕获并置空，后续广播直接跳过。
-  if (!scanPort) return;
-  try {
-    scanPort.postMessage(message);
-  } catch {
-    scanPort = null;
+  // 页面关闭后端口失效，postMessage 会抛错；逐端口捕获并剔除，不影响其他页面。
+  for (const port of [...scanPorts]) {
+    try {
+      port.postMessage(message);
+    } catch {
+      scanPorts.delete(port);
+    }
   }
 }
 
@@ -25,20 +27,24 @@ chrome.action.onClicked.addListener(() => {
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'scan') return;
-  scanPort = port;
+  scanPorts.add(port);
   port.onDisconnect.addListener(() => {
-    if (scanPort === port) scanPort = null;
+    scanPorts.delete(port);
   });
   if (activeScan) {
-    // 扫描中重开页面时内存结果领先于 storage 快照，故连接即重发当前状态。
-    broadcast({
-      type: 'SNAPSHOT',
-      scanId: activeScan.scanId,
-      results: activeScan.results.slice(),
-      done: activeScan.results.length,
-      total: activeScan.total,
-      status: 'running',
-    });
+    // 扫描中重开页面时内存结果领先于 storage 快照，故仅向新端口补发当前状态。
+    try {
+      port.postMessage({
+        type: 'SNAPSHOT',
+        scanId: activeScan.scanId,
+        results: activeScan.results.slice(),
+        done: activeScan.results.length,
+        total: activeScan.total,
+        status: 'running',
+      });
+    } catch {
+      scanPorts.delete(port);
+    }
   }
 });
 
@@ -196,7 +202,12 @@ async function deleteBookmarks(bookmarkIds) {
   const snapshot = stored[SNAPSHOT_KEY];
   if (snapshot && removed.length) {
     snapshot.results = snapshot.results.filter((result) => !removedSet.has(result.bookmarkId));
-    await chrome.storage.local.set({ [SNAPSHOT_KEY]: snapshot });
+    try {
+      await chrome.storage.local.set({ [SNAPSHOT_KEY]: snapshot });
+    } catch (err) {
+      // 删除已经生效，快照回写失败不应让 UI 误报「清理失败」。
+      console.warn('删除后的扫描快照写入失败:', err);
+    }
   }
 
   return { removed, failed };

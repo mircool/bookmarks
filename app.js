@@ -65,6 +65,10 @@ function bindEvents() {
   el('modal-confirm').addEventListener('click', () => closeModal(true));
   el('modal-cancel').addEventListener('click', () => closeModal(false));
   document.querySelector('.modal-backdrop').addEventListener('click', () => closeModal(false));
+  // 弹窗只能靠键盘关闭时（无取消按钮）也须支持 Esc。
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && modalResolve) closeModal(false);
+  });
 }
 
 function connectScanPort() {
@@ -481,6 +485,8 @@ async function confirmDelete(result) {
     state.results = state.results.filter((entry) => entry.bookmarkId !== result.bookmarkId);
     renderAll();
     await refreshTree();
+    // 重读快照，否则「上次扫描」仍显示删除前的条数。
+    await loadSnapshot();
   } else {
     showInfo('删除失败', escapeHtml(response.failed?.[0]?.error ?? '未知错误'));
   }
@@ -539,6 +545,8 @@ async function cleanupBroken() {
     renderAll();
     await refreshTree();
     await loadBackups();
+    // 同理重读快照，「上次扫描」条数随清理后的存储同步。
+    await loadSnapshot();
 
     const failedCount = response.failed?.length ?? 0;
     showInfo(
@@ -635,13 +643,27 @@ async function restoreBackup(summary) {
   }
 }
 
+let modalLastFocus = null;
+
+function setBackgroundInert(inert) {
+  // 弹窗期间让背景不可聚焦、不可点，键盘 Tab 只在弹窗内循环。
+  document.querySelector('.topbar').inert = inert;
+  document.querySelector('.layout').inert = inert;
+}
+
 function openModal({ title, body, confirmText = '确认', showCancel = true }) {
+  // 单例弹窗：已有弹窗未关闭时直接拒绝，避免覆盖正在等待的 resolve。
+  if (modalResolve) return Promise.resolve(false);
   el('modal-title').textContent = title;
   // body 是静态 HTML 片段，拼接进去的书签标题/URL 必须先 escapeHtml，防止脚本注入。
   el('modal-body').innerHTML = body;
   el('modal-confirm').textContent = confirmText;
   el('modal-cancel').classList.toggle('hidden', !showCancel);
   el('modal-root').classList.remove('hidden');
+  modalLastFocus = document.activeElement;
+  setBackgroundInert(true);
+  // 默认聚焦破坏性最小的按钮：有取消则聚焦取消，否则聚焦关闭。
+  (showCancel ? el('modal-cancel') : el('modal-confirm')).focus();
   return new Promise((resolve) => {
     modalResolve = resolve;
   });
@@ -653,6 +675,10 @@ function showInfo(title, body) {
 
 function closeModal(value) {
   el('modal-root').classList.add('hidden');
+  setBackgroundInert(false);
+  // 焦点还给触发弹窗的元素，键盘用户不会丢失位置。
+  if (modalLastFocus && typeof modalLastFocus.focus === 'function') modalLastFocus.focus();
+  modalLastFocus = null;
   const resolve = modalResolve;
   modalResolve = null;
   resolve?.(value);
