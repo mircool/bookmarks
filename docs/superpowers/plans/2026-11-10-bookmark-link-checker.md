@@ -934,7 +934,10 @@ async function startScan(items) {
     });
   };
 
-  await writeSnapshot('running', null);
+  // 快照写入失败只告警，不能阻断扫描启动
+  await writeSnapshot('running', null).catch((err) => {
+    console.warn('初始扫描快照写入失败:', err);
+  });
 
   runScan({
     items,
@@ -948,19 +951,31 @@ async function startScan(items) {
         total: state.total,
         current: result.url,
       });
-      if (state.results.length % SNAPSHOT_EVERY === 0) void writeSnapshot('running', null);
+      if (state.results.length % SNAPSHOT_EVERY === 0) {
+        void writeSnapshot('running', null).catch((err) => {
+          console.warn('扫描快照写入失败:', err);
+        });
+      }
     },
   })
     .then(async () => {
       const status = controller.signal.aborted ? 'cancelled' : 'done';
       const finishedAt = Date.now();
-      await writeSnapshot(status, finishedAt);
+      try {
+        await writeSnapshot(status, finishedAt);
+      } catch (err) {
+        console.warn('扫描结果快照写入失败:', err);
+      }
       broadcast({ type: 'SCAN_DONE', status, finishedAt });
     })
     .catch(async (err) => {
       console.error('扫描异常:', err);
       const finishedAt = Date.now();
-      await writeSnapshot('cancelled', finishedAt);
+      try {
+        await writeSnapshot('cancelled', finishedAt);
+      } catch (writeErr) {
+        console.warn('扫描结果快照写入失败:', writeErr);
+      }
       broadcast({ type: 'SCAN_DONE', status: 'cancelled', finishedAt });
     })
     .finally(() => {
@@ -977,6 +992,15 @@ function cancelScan(scanId) {
   return { cancelled: true };
 }
 
+async function bookmarkExists(id) {
+  try {
+    const nodes = await chrome.bookmarks.get(id);
+    return nodes.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function deleteBookmarks(bookmarkIds) {
   const removed = [];
   const failed = [];
@@ -986,7 +1010,8 @@ async function deleteBookmarks(bookmarkIds) {
       try {
         await chrome.bookmarks.remove(id);
       } catch (err) {
-        if (!/find bookmark/i.test(String(err?.message ?? err))) throw err;
+        // 用 get 复核是否已不存在，避免依赖会被本地化的错误文案
+        if (await bookmarkExists(id)) throw err;
       }
       removed.push(id);
     } catch (err) {
