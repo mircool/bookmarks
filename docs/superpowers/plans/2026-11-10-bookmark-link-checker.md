@@ -647,7 +647,7 @@ import { MAX_BACKUPS, buildBackup, trimBackups, buildRestorePlan } from '../lib/
 
 test('buildBackup 抽取字段并计数', () => {
   const items = [
-    { bookmarkId: '1', title: '旧站', url: 'https://old.example', rootKind: 'toolbar', folderPath: ['技术', '前端'], verdict: 'broken' },
+    { title: '旧站', url: 'https://old.example', rootKind: 'toolbar', path: ['技术', '前端'] },
   ];
   const backup = buildBackup(items, { id: 'bk_1', now: 1000 });
   assert.equal(backup.id, 'bk_1');
@@ -743,11 +743,11 @@ export function buildBackup(items, { id, now = Date.now(), reason = 'cleanup' } 
     createdAt: now,
     reason,
     count: items.length,
-    items: items.map(({ title, url, rootKind, folderPath }) => ({
+    items: items.map(({ title, url, rootKind, path }) => ({
       title,
       url,
       rootKind,
-      path: [...folderPath],
+      path: [...path],
     })),
   };
 }
