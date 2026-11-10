@@ -844,14 +844,15 @@ const KEEPALIVE_MS = 25000;
 const SNAPSHOT_EVERY = 50;
 
 let activeScan = null;
-let scanPort = null;
+const scanPorts = new Set();
 
 function broadcast(message) {
-  if (!scanPort) return;
-  try {
-    scanPort.postMessage(message);
-  } catch {
-    scanPort = null;
+  for (const port of [...scanPorts]) {
+    try {
+      port.postMessage(message);
+    } catch {
+      scanPorts.delete(port);
+    }
   }
 }
 
@@ -861,19 +862,23 @@ chrome.action.onClicked.addListener(() => {
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'scan') return;
-  scanPort = port;
+  scanPorts.add(port);
   port.onDisconnect.addListener(() => {
-    if (scanPort === port) scanPort = null;
+    scanPorts.delete(port);
   });
   if (activeScan) {
-    broadcast({
-      type: 'SNAPSHOT',
-      scanId: activeScan.scanId,
-      results: activeScan.results.slice(),
-      done: activeScan.results.length,
-      total: activeScan.total,
-      status: 'running',
-    });
+    try {
+      port.postMessage({
+        type: 'SNAPSHOT',
+        scanId: activeScan.scanId,
+        results: activeScan.results.slice(),
+        done: activeScan.results.length,
+        total: activeScan.total,
+        status: 'running',
+      });
+    } catch {
+      scanPorts.delete(port);
+    }
   }
 });
 
@@ -1028,7 +1033,12 @@ async function deleteBookmarks(bookmarkIds) {
   const snapshot = stored[SNAPSHOT_KEY];
   if (snapshot && removed.length) {
     snapshot.results = snapshot.results.filter((result) => !removedSet.has(result.bookmarkId));
-    await chrome.storage.local.set({ [SNAPSHOT_KEY]: snapshot });
+    try {
+      await chrome.storage.local.set({ [SNAPSHOT_KEY]: snapshot });
+    } catch (err) {
+      // 删除已经生效，快照回写失败不应让 UI 误报「清理失败」
+      console.warn('删除后的扫描快照写入失败:', err);
+    }
   }
 
   return { removed, failed };
@@ -1446,6 +1456,7 @@ button, input { font: inherit; color: inherit; }
   border-radius: var(--radius-panel);
   overflow: hidden;
 }
+.results:empty { display: none; }
 
 .result-row {
   --status: var(--skip);
@@ -1687,6 +1698,9 @@ function bindEvents() {
   el('modal-confirm').addEventListener('click', () => closeModal(true));
   el('modal-cancel').addEventListener('click', () => closeModal(false));
   document.querySelector('.modal-backdrop').addEventListener('click', () => closeModal(false));
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && modalResolve) closeModal(false);
+  });
 }
 
 function connectScanPort() {
@@ -2097,6 +2111,7 @@ async function confirmDelete(result) {
     state.results = state.results.filter((entry) => entry.bookmarkId !== result.bookmarkId);
     renderAll();
     await refreshTree();
+    await loadSnapshot();
   } else {
     showInfo('删除失败', escapeHtml(response.failed?.[0]?.error ?? '未知错误'));
   }
@@ -2153,6 +2168,7 @@ async function cleanupBroken() {
     renderAll();
     await refreshTree();
     await loadBackups();
+    await loadSnapshot();
 
     const failedCount = response.failed?.length ?? 0;
     showInfo(
@@ -2249,12 +2265,23 @@ async function restoreBackup(summary) {
   }
 }
 
+let modalLastFocus = null;
+
+function setBackgroundInert(inert) {
+  document.querySelector('.topbar').inert = inert;
+  document.querySelector('.layout').inert = inert;
+}
+
 function openModal({ title, body, confirmText = '确认', showCancel = true }) {
+  if (modalResolve) return Promise.resolve(false);
   el('modal-title').textContent = title;
   el('modal-body').innerHTML = body;
   el('modal-confirm').textContent = confirmText;
   el('modal-cancel').classList.toggle('hidden', !showCancel);
   el('modal-root').classList.remove('hidden');
+  modalLastFocus = document.activeElement;
+  setBackgroundInert(true);
+  (showCancel ? el('modal-cancel') : el('modal-confirm')).focus();
   return new Promise((resolve) => {
     modalResolve = resolve;
   });
@@ -2266,6 +2293,9 @@ function showInfo(title, body) {
 
 function closeModal(value) {
   el('modal-root').classList.add('hidden');
+  setBackgroundInert(false);
+  if (modalLastFocus && typeof modalLastFocus.focus === 'function') modalLastFocus.focus();
+  modalLastFocus = null;
   const resolve = modalResolve;
   modalResolve = null;
   resolve?.(value);
