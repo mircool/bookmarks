@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "书签失效检测器",
+  "version": "0.1.0",
+  "minimum_chrome_version": "116",
+  "description": "检测书签链接可用性，标记失效与可疑，支持单项删除与一键清理（自动备份）。",
+  "permissions": ["bookmarks", "storage"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "书签失效检测器"
+  }
+}
