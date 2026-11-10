@@ -351,6 +351,7 @@ button, input { font: inherit; color: inherit; }
   transition: color 0.12s var(--ease);
 }
 .link-btn:hover { color: var(--text); }
+.link-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .modal-root { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; }
 .modal-backdrop { position: absolute; inset: 0; background: rgba(12, 12, 10, 0.5); backdrop-filter: blur(2px); }
